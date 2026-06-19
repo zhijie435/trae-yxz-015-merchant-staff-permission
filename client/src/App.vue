@@ -1,11 +1,29 @@
 <template>
   <div class="app-container">
     <header class="app-header">
-      <h1>员工管理</h1>
+      <h1>员工管理系统</h1>
       <div class="store-info">当前门店: {{ storeName }}</div>
     </header>
 
+    <div class="tab-bar">
+      <button 
+        class="tab-btn" 
+        :class="{ active: activeTab === 'employees' }"
+        @click="switchTab('employees')"
+      >
+        👥 员工管理
+      </button>
+      <button 
+        class="tab-btn" 
+        :class="{ active: activeTab === 'tasks' }"
+        @click="switchTab('tasks')"
+      >
+        📋 任务管理
+      </button>
+    </div>
+
     <main class="app-main">
+      <div v-if="activeTab === 'employees'">
       <div class="toolbar">
         <button class="btn btn-primary" @click="openAddModal">
           <span class="icon">+</span>
@@ -398,22 +416,182 @@
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
     </div>
+
+    <div v-if="activeTab === 'tasks'" class="task-management">
+      <div class="task-toolbar">
+        <button class="btn btn-primary" @click="openAddTaskModal">
+          <span class="icon">+</span>
+          创建任务
+        </button>
+        <div class="task-filter">
+          <select v-model="taskFilter" @change="filterTasks">
+            <option value="all">全部任务</option>
+            <option value="pending">待处理</option>
+            <option value="in_progress">进行中</option>
+            <option value="completed">已完成</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="task-stats" v-if="taskStats">
+        <div class="stat-item">
+          <span class="stat-number">{{ taskStats.total }}</span>
+          <span class="stat-label">总任务</span>
+        </div>
+        <div class="stat-item pending">
+          <span class="stat-number">{{ taskStats.pending }}</span>
+          <span class="stat-label">待处理</span>
+        </div>
+        <div class="stat-item in-progress">
+          <span class="stat-number">{{ taskStats.inProgress }}</span>
+          <span class="stat-label">进行中</span>
+        </div>
+        <div class="stat-item completed">
+          <span class="stat-number">{{ taskStats.completed }}</span>
+          <span class="stat-label">已完成</span>
+        </div>
+        <div class="stat-item overdue">
+          <span class="stat-number">{{ taskStats.overdue }}</span>
+          <span class="stat-label">已逾期</span>
+        </div>
+      </div>
+
+      <div v-if="isManager" class="info-banner">
+        <span class="info-icon">ℹ️</span>
+        <span>管理员视图: 可以看到所有任务并进行指派</span>
+      </div>
+      <div v-else class="info-banner employee">
+        <span class="info-icon">👤</span>
+        <span>员工视图: 仅显示被指派给您的任务</span>
+      </div>
+
+      <div class="task-list">
+        <div v-if="filteredTasks.length === 0" class="empty-state">
+          暂无任务
+        </div>
+        <div v-else class="task-cards">
+          <div v-for="task in filteredTasks" :key="task.id" class="task-card">
+            <div class="task-card-header">
+              <div class="task-priority" :class="task.priority">
+                {{ task.priority === 'high' ? '紧急' : (task.priority === 'medium' ? '普通' : '低') }}
+              </div>
+              <div class="task-status" :class="task.status">
+                {{ task.status === 'pending' ? '待处理' : (task.status === 'in_progress' ? '进行中' : '已完成') }}
+              </div>
+            </div>
+            <div class="task-card-body">
+              <h3 class="task-title">{{ task.title }}</h3>
+              <p class="task-description">{{ task.description }}</p>
+              <div class="task-meta">
+                <div class="meta-item">
+                  <span class="meta-label">指派给:</span>
+                  <span class="meta-value">{{ task.assigneeName || '未指派' }}</span>
+                </div>
+                <div class="meta-item" v-if="task.dueDate">
+                  <span class="meta-label">截止日期:</span>
+                  <span class="meta-value" :class="{ overdue: isOverdue(task) && task.status !== 'completed' }">
+                    {{ formatDate(task.dueDate) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="task-card-footer">
+              <button class="btn-icon" @click="editTask(task)" title="编辑">
+                ✎
+              </button>
+              <button class="btn-icon btn-success" @click="updateTaskStatus(task, 'in_progress')" v-if="task.status === 'pending'" title="开始任务">
+                ▶
+              </button>
+              <button class="btn-icon btn-primary" @click="updateTaskStatus(task, 'completed')" v-if="task.status !== 'completed'" title="完成任务">
+                ✓
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showTaskModal" class="modal-overlay" @click.self="closeTaskModal">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h2>{{ editingTask ? '编辑任务' : '创建任务' }}</h2>
+          <button class="modal-close" @click="closeTaskModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>任务标题 *</label>
+            <input 
+              v-model="taskForm.title" 
+              type="text" 
+              placeholder="请输入任务标题"
+            />
+          </div>
+          <div class="form-group">
+            <label>任务描述</label>
+            <textarea 
+              v-model="taskForm.description" 
+              rows="4"
+              placeholder="请输入任务描述"
+            ></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>优先级</label>
+              <select v-model="taskForm.priority">
+                <option value="low">低</option>
+                <option value="medium">普通</option>
+                <option value="high">紧急</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>截止日期</label>
+              <input 
+                v-model="taskForm.dueDate" 
+                type="date"
+              />
+            </div>
+          </div>
+          <div class="form-group" v-if="isManager">
+            <label>指派给</label>
+            <select v-model="taskForm.assigneeId">
+              <option :value="null">不指派</option>
+              <option v-for="emp in employees" :key="emp.id" :value="emp.id">
+                {{ emp.name }} ({{ emp.role === 'manager' ? '管理员' : '员工' }})
+              </option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closeTaskModal">取消</button>
+          <button class="btn btn-primary" @click="submitTask" :disabled="submitting">
+            {{ submitting ? '提交中...' : (editingTask ? '保存' : '创建') }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import api from './api/employee.js';
+import taskApi from './api/task.js';
 import { PERMISSION_GROUPS, PERMISSION_DETAILS } from './config/permissions.js';
 
 export default {
   name: 'App',
   data() {
     return {
+      activeTab: 'employees',
       PERMISSION_GROUPS,
       PERMISSION_DETAILS,
       storeId: 'store001',
       storeName: '示例门店',
+      isManager: true,
+      currentEmployeeId: null,
       employees: [],
+      tasks: [],
+      taskStats: null,
+      taskFilter: 'all',
       loading: false,
       showAddModal: false,
       showEditModal: false,
@@ -421,6 +599,7 @@ export default {
       showViewModal: false,
       showPermissionModal: false,
       showApprovalModal: false,
+      showTaskModal: false,
       currentEmployee: null,
       pendingEmployees: [],
       pendingCount: 0,
@@ -428,6 +607,14 @@ export default {
       submitting: false,
       savingPermissions: false,
       selectedPermissions: [],
+      editingTask: null,
+      taskForm: {
+        title: '',
+        description: '',
+        priority: 'medium',
+        dueDate: '',
+        assigneeId: null
+      },
       formData: {
         name: '',
         phone: '',
@@ -454,12 +641,161 @@ export default {
         total += group.permissions.length;
       });
       return total;
+    },
+    filteredTasks() {
+      if (this.taskFilter === 'all') {
+        return this.tasks;
+      }
+      return this.tasks.filter(task => task.status === this.taskFilter);
     }
   },
   mounted() {
     this.loadEmployees();
   },
   methods: {
+    switchTab(tab) {
+      this.activeTab = tab;
+      if (tab === 'tasks') {
+        this.loadTasks();
+        this.loadTaskStats();
+      }
+    },
+
+    async loadTasks() {
+      this.loading = true;
+      try {
+        const response = await taskApi.getTasks(
+          this.storeId, 
+          this.isManager ? null : this.currentEmployeeId,
+          this.isManager
+        );
+        if (response.success) {
+          this.tasks = response.data;
+        }
+      } catch (error) {
+        console.error('加载任务列表失败:', error);
+        alert('加载任务列表失败');
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async loadTaskStats() {
+      try {
+        const response = await taskApi.getTaskStats(
+          this.storeId,
+          this.isManager ? null : this.currentEmployeeId,
+          this.isManager
+        );
+        if (response.success) {
+          this.taskStats = response.data;
+        }
+      } catch (error) {
+        console.error('加载任务统计失败:', error);
+      }
+    },
+
+    openAddTaskModal() {
+      this.editingTask = null;
+      this.taskForm = {
+        title: '',
+        description: '',
+        priority: 'medium',
+        dueDate: '',
+        assigneeId: null
+      };
+      this.showTaskModal = true;
+    },
+
+    editTask(task) {
+      this.editingTask = task;
+      this.taskForm = {
+        title: task.title,
+        description: task.description || '',
+        priority: task.priority || 'medium',
+        dueDate: task.dueDate ? task.dueDate.split('T')[0] : '',
+        assigneeId: task.assigneeId
+      };
+      this.showTaskModal = true;
+    },
+
+    closeTaskModal() {
+      this.showTaskModal = false;
+      this.editingTask = null;
+    },
+
+    async submitTask() {
+      if (!this.taskForm.title) {
+        alert('请填写任务标题');
+        return;
+      }
+
+      this.submitting = true;
+      try {
+        const taskData = {
+          title: this.taskForm.title,
+          description: this.taskForm.description,
+          priority: this.taskForm.priority,
+          storeId: this.storeId,
+          dueDate: this.taskForm.dueDate ? new Date(this.taskForm.dueDate).toISOString() : null,
+          assigneeId: this.taskForm.assigneeId,
+          creatorId: this.currentEmployeeId
+        };
+
+        let response;
+        if (this.editingTask) {
+          response = await taskApi.updateTask(
+            this.editingTask.id, 
+            taskData,
+            this.isManager ? null : this.currentEmployeeId,
+            this.isManager
+          );
+        } else {
+          response = await taskApi.createTask(taskData);
+        }
+
+        if (response.success) {
+          alert(this.editingTask ? '任务更新成功' : '任务创建成功');
+          this.closeTaskModal();
+          this.loadTasks();
+          this.loadTaskStats();
+        }
+      } catch (error) {
+        console.error('提交任务失败:', error);
+        alert('操作失败，请重试');
+      } finally {
+        this.submitting = false;
+      }
+    },
+
+    async updateTaskStatus(task, status) {
+      try {
+        const response = await taskApi.updateTask(
+          task.id,
+          { status },
+          this.isManager ? null : this.currentEmployeeId,
+          this.isManager
+        );
+        if (response.success) {
+          alert('任务状态更新成功');
+          this.loadTasks();
+          this.loadTaskStats();
+        }
+      } catch (error) {
+        console.error('更新任务状态失败:', error);
+        alert('操作失败，请重试');
+      }
+    },
+
+    filterTasks() {
+      // 过滤通过computed属性实现
+    },
+
+    isOverdue(task) {
+      if (!task.dueDate || task.status === 'completed') return false;
+      return new Date(task.dueDate) < new Date();
+    },
+
     getFullImageUrl(path) {
       if (!path) return '';
       if (path.startsWith('http')) return path;
@@ -1596,6 +1932,268 @@ td {
   justify-content: flex-end;
 }
 
+.tab-bar {
+  display: flex;
+  background: #f8f9fa;
+  border-bottom: 2px solid #e0e0e0;
+  padding: 0 40px;
+}
+
+.tab-btn {
+  padding: 15px 30px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.tab-btn:hover {
+  color: #667eea;
+  background: #f0f0ff;
+}
+
+.tab-btn.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+  background: white;
+  font-weight: 600;
+}
+
+.task-management {
+  padding: 30px 40px;
+}
+
+.task-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.task-filter select {
+  padding: 10px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.task-stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.stat-item {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.stat-item.pending {
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+}
+
+.stat-item.in-progress {
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
+}
+
+.stat-item.completed {
+  background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+}
+
+.stat-item.overdue {
+  background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+}
+
+.stat-number {
+  display: block;
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.stat-label {
+  display: block;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.info-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: #e3f2fd;
+  color: #1976d2;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  font-size: 14px;
+}
+
+.info-banner.employee {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.info-icon {
+  font-size: 20px;
+}
+
+.task-list {
+  margin-top: 20px;
+}
+
+.task-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.task-card {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.task-card:hover {
+  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.2);
+  transform: translateY(-2px);
+}
+
+.task-card-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 15px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.task-priority {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-priority.high {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.task-priority.medium {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.task-priority.low {
+  background: #f3e5f5;
+  color: #7b1fa2;
+}
+
+.task-status {
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-status.pending {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.task-status.in_progress {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.task-status.completed {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.task-card-body {
+  padding: 20px;
+}
+
+.task-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.task-description {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 15px;
+  line-height: 1.5;
+}
+
+.task-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.meta-label {
+  color: #999;
+  min-width: 80px;
+}
+
+.meta-value {
+  color: #333;
+  font-weight: 500;
+}
+
+.meta-value.overdue {
+  color: #d32f2f;
+  font-weight: 600;
+}
+
+.task-card-footer {
+  display: flex;
+  gap: 8px;
+  padding: 15px 20px;
+  background: #fafafa;
+  border-top: 1px solid #e0e0e0;
+  justify-content: flex-end;
+}
+
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;
@@ -1609,6 +2207,53 @@ td {
 
   table {
     font-size: 12px;
+  }
+
+  .tab-bar {
+    padding: 0 20px;
+  }
+
+  .tab-btn {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  .task-management {
+    padding: 20px;
+  }
+
+  .task-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .task-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .task-toolbar {
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .approval-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .idcard-images {
+    flex-direction: column;
+  }
+
+  .idcard-image {
+    max-width: 100%;
+  }
+
+  .approval-actions {
+    flex-direction: column;
+  }
+
+  .approval-actions button {
+    width: 100%;
   }
 
   th, td {
@@ -1647,27 +2292,6 @@ td {
   .group-toggle {
     width: 100%;
     justify-content: center;
-  }
-
-  .approval-info {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .idcard-images {
-    flex-direction: column;
-  }
-
-  .idcard-image {
-    max-width: 100%;
-  }
-
-  .approval-actions {
-    flex-direction: column;
-  }
-
-  .approval-actions button {
-    width: 100%;
   }
 }
 </style>
