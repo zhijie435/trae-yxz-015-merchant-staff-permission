@@ -239,6 +239,13 @@ class AuthController {
         });
       }
 
+      if (employee.status !== 'active') {
+        return res.status(403).json({
+          success: false,
+          message: '账号已被禁用，请联系管理员'
+        });
+      }
+
       res.json({
         success: true,
         data: {

@@ -3,8 +3,11 @@ const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
+const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
+
+router.use(authMiddleware);
 
 const uploadDir = path.join(__dirname, '../uploads');
 if (!fs.existsSync(uploadDir)) {

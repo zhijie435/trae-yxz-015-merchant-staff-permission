@@ -1,20 +1,4 @@
-import axios from 'axios';
-
-const apiClient = axios.create({
-  baseURL: '/api',
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json'
-  }
-});
-
-apiClient.interceptors.response.use(
-  response => response.data,
-  error => {
-    console.error('API Error:', error);
-    return Promise.reject(error);
-  }
-);
+import apiClient from './index';
 
 export default {
   sendVerificationCode(phone) {

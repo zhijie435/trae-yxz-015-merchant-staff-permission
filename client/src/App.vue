@@ -770,9 +770,18 @@ export default {
             this.storeId = this.currentUser.storeId;
             this.loadEmployees();
             return;
+          } else {
+            alert(response.message || '账号已被禁用');
+            localStorage.removeItem('employeeToken');
+            localStorage.removeItem('employeeUser');
           }
         } catch (error) {
           console.error('验证登录状态失败:', error);
+          if (error.response?.status === 403) {
+            alert(error.response?.data?.message || '账号已被禁用');
+            localStorage.removeItem('employeeToken');
+            localStorage.removeItem('employeeUser');
+          }
         }
         
         localStorage.removeItem('employeeToken');
