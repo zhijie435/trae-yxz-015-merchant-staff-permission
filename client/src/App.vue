@@ -1439,6 +1439,25 @@ export default {
       try {
         const response = await api.updatePermissions(this.currentEmployee.id, this.selectedPermissions);
         if (response.success) {
+          const isCurrentUser = this.currentEmployee.id === this.currentEmployeeId;
+          
+          if (isCurrentUser) {
+            try {
+              const verifyRes = await authApi.verifyToken();
+              if (verifyRes.success) {
+                this.currentUser = verifyRes.data.employee;
+                localStorage.setItem('employeeUser', JSON.stringify(this.currentUser));
+                alert('权限配置保存成功\n您的权限已更新，将自动刷新页面以应用新权限');
+                this.closePermissionModal();
+                this.loadEmployees();
+                window.location.reload();
+                return;
+              }
+            } catch (error) {
+              console.error('刷新权限失败:', error);
+            }
+          }
+          
           alert('权限配置保存成功');
           this.closePermissionModal();
           this.loadEmployees();
