@@ -1,5 +1,6 @@
 const { v4: uuidv4 } = require('uuid');
 const bcrypt = require('bcryptjs');
+const permissionsConfig = require('../config/permissions');
 
 class EmployeeModel {
   constructor() {
@@ -18,6 +19,7 @@ class EmployeeModel {
         avatar: '',
         idCardFront: '',
         idCardBack: '',
+        permissions: Object.values(permissionsConfig.PERMISSIONS),
         status: 'active',
         createdAt: new Date().toISOString()
       },
@@ -30,6 +32,7 @@ class EmployeeModel {
         avatar: '',
         idCardFront: '',
         idCardBack: '',
+        permissions: permissionsConfig.DEFAULT_PERMISSIONS,
         status: 'active',
         createdAt: new Date().toISOString()
       },
@@ -42,6 +45,7 @@ class EmployeeModel {
         avatar: '',
         idCardFront: '',
         idCardBack: '',
+        permissions: permissionsConfig.DEFAULT_PERMISSIONS,
         status: 'inactive',
         createdAt: new Date().toISOString()
       }
@@ -66,6 +70,9 @@ class EmployeeModel {
       avatar: employeeData.avatar || '',
       idCardFront: employeeData.idCardFront || '',
       idCardBack: employeeData.idCardBack || '',
+      permissions: employeeData.role === 'manager' 
+        ? Object.values(permissionsConfig.PERMISSIONS) 
+        : (employeeData.permissions || permissionsConfig.DEFAULT_PERMISSIONS),
       status: 'active',
       createdAt: new Date().toISOString()
     };
@@ -102,7 +109,22 @@ class EmployeeModel {
     if (updateData.avatar !== undefined) emp.avatar = updateData.avatar;
     if (updateData.idCardFront !== undefined) emp.idCardFront = updateData.idCardFront;
     if (updateData.idCardBack !== undefined) emp.idCardBack = updateData.idCardBack;
+    if (updateData.permissions !== undefined) emp.permissions = updateData.permissions;
 
+    this.employees.set(id, emp);
+    return this.formatEmployee(emp);
+  }
+
+  async updatePermissions(id, permissions) {
+    const emp = this.employees.get(id);
+    if (!emp) {
+      return null;
+    }
+
+    const allPermissions = Object.values(permissionsConfig.PERMISSIONS);
+    const validPermissions = permissions.filter(p => allPermissions.includes(p));
+
+    emp.permissions = validPermissions;
     this.employees.set(id, emp);
     return this.formatEmployee(emp);
   }

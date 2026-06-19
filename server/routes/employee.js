@@ -7,6 +7,7 @@ router.get('/:id', employeeController.getEmployeeById);
 router.post('/', employeeController.createEmployee);
 router.put('/:id', employeeController.updateEmployee);
 router.put('/:id/password', employeeController.updatePassword);
+router.put('/:id/permissions', employeeController.updatePermissions);
 router.patch('/:id/status', employeeController.toggleEmployeeStatus);
 router.delete('/:id', employeeController.deleteEmployee);
 

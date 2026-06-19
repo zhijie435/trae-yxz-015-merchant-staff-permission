@@ -68,5 +68,9 @@ export default {
         'Content-Type': 'multipart/form-data'
       }
     });
+  },
+
+  updatePermissions(id, permissions) {
+    return apiClient.put(`/employees/${id}/permissions`, { permissions });
   }
 };

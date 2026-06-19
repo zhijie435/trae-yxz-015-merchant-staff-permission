@@ -200,6 +200,41 @@ class EmployeeController {
       });
     }
   }
+
+  async updatePermissions(req, res) {
+    try {
+      const { id } = req.params;
+      const { permissions } = req.body;
+
+      if (!Array.isArray(permissions)) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '权限必须是数组格式' 
+        });
+      }
+
+      const employee = await employeeModel.updatePermissions(id, permissions);
+
+      if (!employee) {
+        return res.status(404).json({ 
+          success: false, 
+          message: '员工不存在' 
+        });
+      }
+
+      res.json({
+        success: true,
+        message: '员工权限更新成功',
+        data: employee
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        message: '更新员工权限失败', 
+        error: error.message 
+      });
+    }
+  }
 }
 
 module.exports = new EmployeeController();

@@ -58,6 +58,9 @@
                   <button class="btn-icon" @click="showPasswordModal(emp)" title="修改密码">
                     🔑
                   </button>
+                  <button class="btn-icon btn-permission" @click="showPermissionModal(emp)" title="权限配置">
+                    🔐
+                  </button>
                   <button 
                     class="btn-icon" 
                     :class="emp.status === 'active' ? 'btn-disable' : 'btn-enable'"
@@ -260,6 +263,75 @@
       </div>
     </div>
 
+    <div v-if="showPermissionModal" class="modal-overlay" @click.self="closePermissionModal">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h2>权限配置 - {{ currentEmployee?.name }}</h2>
+          <button class="modal-close" @click="closePermissionModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="permission-info">
+            <div class="info-text">
+              <span class="info-icon">ℹ️</span>
+              <span>勾选该员工可使用的功能权限</span>
+            </div>
+            <div class="permission-summary">
+              <span class="summary-label">已选权限:</span>
+              <span class="summary-count">{{ selectedPermissions.length }} / {{ totalPermissions }}</span>
+            </div>
+          </div>
+
+          <div class="permission-groups">
+            <div 
+              v-for="group in PERMISSION_GROUPS" 
+              :key="group.key" 
+              class="permission-group"
+            >
+              <div class="group-header">
+                <div class="group-title">
+                  <span class="group-icon">{{ group.icon }}</span>
+                  <span class="group-name">{{ group.name }}</span>
+                </div>
+                <label class="group-toggle">
+                  <input 
+                    type="checkbox"
+                    :checked="isGroupAllSelected(group.permissions)"
+                    @change="toggleGroup(group.permissions)"
+                  />
+                  <span class="toggle-text">{{ isGroupAllSelected(group.permissions) ? '全选' : '取消' }}</span>
+                </label>
+              </div>
+              <div class="group-permissions">
+                <div 
+                  v-for="perm in group.permissions" 
+                  :key="perm"
+                  class="permission-item"
+                >
+                  <label class="permission-label">
+                    <input 
+                      type="checkbox"
+                      :value="perm"
+                      v-model="selectedPermissions"
+                    />
+                    <div class="permission-content">
+                      <div class="permission-label-text">{{ PERMISSION_DETAILS[perm].label }}</div>
+                      <div class="permission-description">{{ PERMISSION_DETAILS[perm].description }}</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" @click="closePermissionModal">取消</button>
+          <button class="btn btn-primary" @click="savePermissions" :disabled="savingPermissions">
+            {{ savingPermissions ? '保存中...' : '保存配置' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
     </div>
@@ -268,11 +340,14 @@
 
 <script>
 import api from './api/employee.js';
+import { PERMISSION_GROUPS, PERMISSION_DETAILS } from './config/permissions.js';
 
 export default {
   name: 'App',
   data() {
     return {
+      PERMISSION_GROUPS,
+      PERMISSION_DETAILS,
       storeId: 'store001',
       storeName: '示例门店',
       employees: [],
@@ -281,9 +356,12 @@ export default {
       showEditModal: false,
       showPasswordChangeModal: false,
       showViewModal: false,
+      showPermissionModal: false,
       currentEmployee: null,
       viewEmployee: null,
       submitting: false,
+      savingPermissions: false,
+      selectedPermissions: [],
       formData: {
         name: '',
         phone: '',
@@ -302,6 +380,15 @@ export default {
       newPassword: '',
       confirmPassword: ''
     };
+  },
+  computed: {
+    totalPermissions() {
+      let total = 0;
+      PERMISSION_GROUPS.forEach(group => {
+        total += group.permissions.length;
+      });
+      return total;
+    }
   },
   mounted() {
     this.loadEmployees();
@@ -595,6 +682,52 @@ export default {
     closeViewModal() {
       this.showViewModal = false;
       this.viewEmployee = null;
+    },
+
+    showPermissionModal(employee) {
+      this.currentEmployee = employee;
+      this.selectedPermissions = [...(employee.permissions || [])];
+      this.showPermissionModal = true;
+    },
+
+    closePermissionModal() {
+      this.showPermissionModal = false;
+      this.currentEmployee = null;
+      this.selectedPermissions = [];
+    },
+
+    isGroupAllSelected(permissions) {
+      return permissions.every(p => this.selectedPermissions.includes(p));
+    },
+
+    toggleGroup(permissions) {
+      const allSelected = this.isGroupAllSelected(permissions);
+      if (allSelected) {
+        this.selectedPermissions = this.selectedPermissions.filter(p => !permissions.includes(p));
+      } else {
+        permissions.forEach(p => {
+          if (!this.selectedPermissions.includes(p)) {
+            this.selectedPermissions.push(p);
+          }
+        });
+      }
+    },
+
+    async savePermissions() {
+      this.savingPermissions = true;
+      try {
+        const response = await api.updatePermissions(this.currentEmployee.id, this.selectedPermissions);
+        if (response.success) {
+          alert('权限配置保存成功');
+          this.closePermissionModal();
+          this.loadEmployees();
+        }
+      } catch (error) {
+        console.error('保存权限失败:', error);
+        alert('保存失败，请重试');
+      } finally {
+        this.savingPermissions = false;
+      }
     },
 
     formatDate(dateString) {
@@ -1058,6 +1191,163 @@ td {
   100% { transform: rotate(360deg); }
 }
 
+.permission-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.info-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.info-icon {
+  font-size: 18px;
+}
+
+.permission-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-label {
+  font-size: 14px;
+  color: #666;
+}
+
+.summary-count {
+  font-size: 16px;
+  font-weight: 600;
+  color: #667eea;
+}
+
+.permission-groups {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 10px;
+}
+
+.permission-group {
+  margin-bottom: 20px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+}
+
+.group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-icon {
+  font-size: 24px;
+}
+
+.group-name {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.group-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.group-toggle input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.toggle-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.group-permissions {
+  padding: 15px;
+  background: white;
+}
+
+.permission-item {
+  padding: 12px;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.3s;
+}
+
+.permission-item:last-child {
+  border-bottom: none;
+}
+
+.permission-item:hover {
+  background: #f8f9fa;
+}
+
+.permission-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.permission-label input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: #667eea;
+}
+
+.permission-content {
+  flex: 1;
+}
+
+.permission-label-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.permission-description {
+  font-size: 12px;
+  color: #999;
+}
+
+.btn-permission:hover {
+  background: #e8f5e9;
+  border-color: #388e3c;
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;
@@ -1087,6 +1377,28 @@ td {
 
   .upload-row {
     flex-direction: column;
+  }
+
+  .modal-large {
+    width: 95%;
+    max-width: none;
+  }
+
+  .permission-info {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .group-header {
+    flex-direction: column;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  .group-toggle {
+    width: 100%;
+    justify-content: center;
   }
 }
 </style>
