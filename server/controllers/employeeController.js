@@ -134,7 +134,7 @@ class EmployeeController {
 
   async createEmployee(req, res) {
     try {
-      const { name, phone, role, password, storeId } = req.body;
+      const { name, phone, role, password, storeId, idCardFront, idCardBack } = req.body;
 
       if (!name || !phone || !storeId) {
         return res.status(400).json({ 
@@ -143,12 +143,21 @@ class EmployeeController {
         });
       }
 
+      if (!idCardFront || !idCardBack) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '身份证照片正反面都必须上传' 
+        });
+      }
+
       const employee = await employeeModel.create({ 
         name, 
         phone, 
         role, 
         password,
-        storeId 
+        storeId,
+        idCardFront,
+        idCardBack
       });
 
       res.status(201).json({

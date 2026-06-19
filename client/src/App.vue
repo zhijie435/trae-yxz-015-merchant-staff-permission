@@ -1263,6 +1263,11 @@ export default {
         return;
       }
 
+      if (!this.idCardFrontFile || !this.idCardBackFile) {
+        alert('请上传完整的身份证照片（正反面都需要）');
+        return;
+      }
+
       this.submitting = true;
 
       try {
@@ -1277,7 +1282,7 @@ export default {
           }
         }
 
-        if (this.idCardFrontFile || this.idCardBackFile) {
+        if (this.idCardFrontFile && this.idCardBackFile) {
           const idCardRes = await api.uploadIdCard(this.idCardFrontFile, this.idCardBackFile);
           if (idCardRes.success) {
             if (idCardRes.data.front) {
