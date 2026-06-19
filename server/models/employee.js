@@ -133,6 +133,16 @@ class EmployeeModel {
     return emp ? this.formatEmployee(emp) : null;
   }
 
+  findByPhone(phone) {
+    let found = null;
+    this.employees.forEach(emp => {
+      if (emp.phone === phone) {
+        found = emp;
+      }
+    });
+    return found ? this.formatEmployee(found) : null;
+  }
+
   async update(id, updateData) {
     const emp = this.employees.get(id);
     if (!emp) {

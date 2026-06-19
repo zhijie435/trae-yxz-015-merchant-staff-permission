@@ -1,8 +1,98 @@
 <template>
-  <div class="app-container">
+  <div class="login-page" v-if="!isLoggedIn">
+    <div class="login-container">
+      <div class="login-header">
+        <h1>🏪 员工管理系统</h1>
+        <p>门店端权限管理平台</p>
+      </div>
+
+      <div class="login-tabs">
+        <button 
+          class="login-tab" 
+          :class="{ active: loginMode === 'code' }"
+          @click="loginMode = 'code'"
+        >
+          📱 验证码登录
+        </button>
+        <button 
+          class="login-tab" 
+          :class="{ active: loginMode === 'password' }"
+          @click="loginMode = 'password'"
+        >
+          🔐 密码登录
+        </button>
+      </div>
+
+      <div class="login-form">
+        <div class="form-group">
+          <label>手机号</label>
+          <input 
+            v-model="loginForm.phone" 
+            type="tel" 
+            placeholder="请输入手机号"
+            maxlength="11"
+            @input="loginForm.phone = loginForm.phone.replace(/\D/g, '')"
+          />
+        </div>
+
+        <div class="form-group" v-if="loginMode === 'code'">
+          <label>验证码</label>
+          <div class="code-input-group">
+            <input 
+              v-model="loginForm.code" 
+              type="text" 
+              placeholder="请输入验证码"
+              maxlength="6"
+              @input="loginForm.code = loginForm.code.replace(/\D/g, '')"
+            />
+            <button 
+              class="btn-code" 
+              :disabled="countdown > 0"
+              @click="sendCode"
+            >
+              {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="form-group" v-if="loginMode === 'password'">
+          <label>密码</label>
+          <input 
+            v-model="loginForm.password" 
+            :type="showPassword ? 'text' : 'password'" 
+            placeholder="请输入密码"
+          />
+          <button class="btn-show-password" @click="showPassword = !showPassword">
+            {{ showPassword ? '🙈' : '👁️' }}
+          </button>
+        </div>
+
+        <button class="btn-login" @click="handleLogin" :disabled="loggingIn">
+          {{ loggingIn ? '登录中...' : '登录' }}
+        </button>
+
+        <div class="login-tips">
+          <p>演示账号: 13800138001 (管理员) / 13800138002 (员工)</p>
+          <p>初始密码: 123456</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-container" v-else>
     <header class="app-header">
-      <h1>员工管理系统</h1>
-      <div class="store-info">当前门店: {{ storeName }}</div>
+      <div class="header-left">
+        <h1>🏪 员工管理系统</h1>
+        <div class="user-info">
+          <span class="user-name">{{ currentUser?.name }}</span>
+          <span class="user-role">{{ currentUser?.role === 'manager' ? '管理员' : '员工' }}</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="btn-logout" @click="logout">
+          退出登录
+        </button>
+      </div>
     </header>
 
     <div class="tab-bar">
@@ -575,12 +665,15 @@
 <script>
 import api from './api/employee.js';
 import taskApi from './api/task.js';
+import authApi from './api/auth.js';
 import { PERMISSION_GROUPS, PERMISSION_DETAILS } from './config/permissions.js';
 
 export default {
   name: 'App',
   data() {
     return {
+      isLoggedIn: false,
+      currentUser: null,
       activeTab: 'employees',
       PERMISSION_GROUPS,
       PERMISSION_DETAILS,
@@ -588,6 +681,15 @@ export default {
       storeName: '示例门店',
       isManager: true,
       currentEmployeeId: null,
+      loginMode: 'code',
+      loginForm: {
+        phone: '',
+        code: '',
+        password: ''
+      },
+      showPassword: false,
+      countdown: 0,
+      loggingIn: false,
       employees: [],
       tasks: [],
       taskStats: null,
@@ -650,9 +752,145 @@ export default {
     }
   },
   mounted() {
-    this.loadEmployees();
+    this.checkLoginStatus();
   },
   methods: {
+    async checkLoginStatus() {
+      const token = localStorage.getItem('employeeToken');
+      const userData = localStorage.getItem('employeeUser');
+      
+      if (token && userData) {
+        try {
+          const response = await authApi.verifyToken();
+          if (response.success) {
+            this.currentUser = response.data.employee;
+            this.isLoggedIn = true;
+            this.isManager = this.currentUser.role === 'manager';
+            this.currentEmployeeId = this.currentUser.id;
+            this.storeId = this.currentUser.storeId;
+            this.loadEmployees();
+            return;
+          }
+        } catch (error) {
+          console.error('验证登录状态失败:', error);
+        }
+        
+        localStorage.removeItem('employeeToken');
+        localStorage.removeItem('employeeUser');
+      }
+      
+      this.isLoggedIn = false;
+    },
+
+    async sendCode() {
+      if (!this.loginForm.phone) {
+        alert('请输入手机号');
+        return;
+      }
+
+      if (this.loginForm.phone.length !== 11) {
+        alert('请输入正确的手机号');
+        return;
+      }
+
+      try {
+        const response = await authApi.sendVerificationCode(this.loginForm.phone);
+        if (response.success) {
+          alert('验证码发送成功');
+          this.countdown = 60;
+          const timer = setInterval(() => {
+            this.countdown--;
+            if (this.countdown <= 0) {
+              clearInterval(timer);
+            }
+          }, 1000);
+        } else {
+          alert(response.message);
+        }
+      } catch (error) {
+        console.error('发送验证码失败:', error);
+        alert('发送验证码失败，请重试');
+      }
+    },
+
+    async handleLogin() {
+      if (!this.loginForm.phone) {
+        alert('请输入手机号');
+        return;
+      }
+
+      if (this.loginForm.phone.length !== 11) {
+        alert('请输入正确的手机号');
+        return;
+      }
+
+      this.loggingIn = true;
+
+      try {
+        let response;
+        
+        if (this.loginMode === 'code') {
+          if (!this.loginForm.code) {
+            alert('请输入验证码');
+            this.loggingIn = false;
+            return;
+          }
+          
+          response = await authApi.loginWithCode(this.loginForm.phone, this.loginForm.code);
+        } else {
+          if (!this.loginForm.password) {
+            alert('请输入密码');
+            this.loggingIn = false;
+            return;
+          }
+          
+          response = await authApi.loginWithPassword(this.loginForm.phone, this.loginForm.password);
+        }
+
+        if (response.success) {
+          this.currentUser = response.data.employee;
+          this.isLoggedIn = true;
+          this.isManager = this.currentUser.role === 'manager';
+          this.currentEmployeeId = this.currentUser.id;
+          this.storeId = this.currentUser.storeId;
+          
+          localStorage.setItem('employeeToken', response.data.token);
+          localStorage.setItem('employeeUser', JSON.stringify(this.currentUser));
+          
+          alert('登录成功');
+          this.loginForm = { phone: '', code: '', password: '' };
+          this.loadEmployees();
+        } else {
+          alert(response.message);
+        }
+      } catch (error) {
+        console.error('登录失败:', error);
+        alert('登录失败，请重试');
+      } finally {
+        this.loggingIn = false;
+      }
+    },
+
+    logout() {
+      if (!confirm('确定要退出登录吗？')) {
+        return;
+      }
+      
+      this.isLoggedIn = false;
+      this.currentUser = null;
+      this.isManager = false;
+      this.currentEmployeeId = null;
+      
+      localStorage.removeItem('employeeToken');
+      localStorage.removeItem('employeeUser');
+      
+      this.employees = [];
+      this.tasks = [];
+      this.activeTab = 'employees';
+      
+      alert('已退出登录');
+    },
+
     switchTab(tab) {
       this.activeTab = tab;
       if (tab === 'tasks') {
@@ -1215,6 +1453,181 @@ export default {
 </script>
 
 <style>
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.login-container {
+  width: 100%;
+  max-width: 450px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.login-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 40px;
+  text-align: center;
+}
+
+.login-header h1 {
+  font-size: 28px;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.login-header p {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.login-tabs {
+  display: flex;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.login-tab {
+  flex: 1;
+  padding: 15px;
+  border: none;
+  background: white;
+  color: #666;
+  font-size: 15px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.login-tab:hover {
+  color: #667eea;
+  background: #f8f9ff;
+}
+
+.login-tab.active {
+  color: #667eea;
+  border-bottom-color: #667eea;
+  font-weight: 600;
+}
+
+.login-form {
+  padding: 30px 40px;
+}
+
+.login-form .form-group {
+  margin-bottom: 20px;
+}
+
+.login-form label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+.login-form input {
+  width: 100%;
+  padding: 12px 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 15px;
+  transition: all 0.3s;
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.code-input-group {
+  display: flex;
+  gap: 10px;
+}
+
+.code-input-group input {
+  flex: 1;
+}
+
+.btn-code {
+  padding: 12px 20px;
+  background: #f0f0f0;
+  color: #667eea;
+  border: 2px solid #667eea;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+  white-space: nowrap;
+}
+
+.btn-code:hover:not(:disabled) {
+  background: #667eea;
+  color: white;
+}
+
+.btn-code:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-show-password {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.btn-login {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  margin-top: 10px;
+}
+
+.btn-login:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-login:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.login-tips {
+  margin-top: 25px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #666;
+}
+
+.login-tips p {
+  margin: 5px 0;
+}
+
 .app-container {
   max-width: 1200px;
   margin: 0 auto;
@@ -1233,14 +1646,53 @@ export default {
   align-items: center;
 }
 
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 14px;
+}
+
+.user-name {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.user-role {
+  opacity: 0.9;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.btn-logout:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: white;
+}
+
 .app-header h1 {
   font-size: 28px;
   font-weight: 600;
-}
-
-.store-info {
-  font-size: 14px;
-  opacity: 0.9;
 }
 
 .app-main {
@@ -2195,10 +2647,36 @@ textarea:focus {
 }
 
 @media (max-width: 768px) {
+  .login-container {
+    margin: 20px;
+  }
+
+  .login-header {
+    padding: 30px 20px;
+  }
+
+  .login-header h1 {
+    font-size: 24px;
+  }
+
+  .login-form {
+    padding: 20px;
+  }
+
   .app-header {
     flex-direction: column;
     gap: 10px;
     padding: 20px;
+  }
+
+  .header-left {
+    flex-direction: column;
+    gap: 10px;
+    text-align: center;
+  }
+
+  .user-info {
+    align-items: center;
   }
 
   .app-main {
