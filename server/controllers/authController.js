@@ -1,6 +1,8 @@
 const verificationCodeModel = require('../models/verificationCode');
 const employeeModel = require('../models/employee');
-const bcrypt = require('bcryptjs');
+const authService = require('../services/authService');
+const employeeService = require('../services/employeeService');
+const auditService = require('../services/auditService');
 
 class AuthController {
   async sendVerificationCode(req, res) {
@@ -30,17 +32,11 @@ class AuthController {
         });
       }
 
-      if (employee.approvalStatus !== 'approved') {
+      const loginCheck = employeeService.canEmployeeLogin(employee);
+      if (!loginCheck.allowed) {
         return res.status(403).json({
           success: false,
-          message: '账号尚未审核通过,请等待管理员审核'
-        });
-      }
-
-      if (employee.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          message: '账号已被禁用,请联系管理员'
+          message: loginCheck.reason
         });
       }
 
@@ -87,53 +83,20 @@ class AuthController {
         });
       }
 
-      const employee = employeeModel.findByPhone(phone);
-      if (!employee) {
-        return res.status(404).json({
-          success: false,
-          message: '该手机号未注册'
-        });
-      }
+      try {
+        const result = await authService.authenticate(phone, null, code, verificationCodeModel);
 
-      if (employee.approvalStatus !== 'approved') {
-        return res.status(403).json({
-          success: false,
-          message: '账号尚未审核通过'
+        res.json({
+          success: true,
+          message: '登录成功',
+          data: result
         });
-      }
-
-      if (employee.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          message: '账号已被禁用'
-        });
-      }
-
-      if (!verificationCodeModel.verifyCode(phone, code)) {
+      } catch (error) {
         return res.status(401).json({
           success: false,
-          message: '验证码错误或已过期'
+          message: error.message
         });
       }
-
-      const token = this.generateToken(employee);
-
-      res.json({
-        success: true,
-        message: '登录成功',
-        data: {
-          token,
-          employee: {
-            id: employee.id,
-            name: employee.name,
-            phone: employee.phone,
-            role: employee.role,
-            storeId: employee.storeId,
-            avatar: employee.avatar,
-            permissions: employee.permissions
-          }
-        }
-      });
     } catch (error) {
       res.status(500).json({
         success: false,
@@ -154,58 +117,58 @@ class AuthController {
         });
       }
 
-      const employee = employeeModel.findByPhone(phone);
-      if (!employee) {
-        return res.status(404).json({
-          success: false,
-          message: '该手机号未注册'
-        });
-      }
+      try {
+        const result = await authService.authenticate(phone, password, null, null);
 
-      if (employee.approvalStatus !== 'approved') {
-        return res.status(403).json({
-          success: false,
-          message: '账号尚未审核通过'
+        res.json({
+          success: true,
+          message: '登录成功',
+          data: result
         });
-      }
-
-      if (employee.status !== 'active') {
-        return res.status(403).json({
-          success: false,
-          message: '账号已被禁用'
-        });
-      }
-
-      const isPasswordValid = await bcrypt.compare(password, employee.password);
-      if (!isPasswordValid) {
+      } catch (error) {
         return res.status(401).json({
           success: false,
-          message: '密码错误'
+          message: error.message
         });
       }
-
-      const token = this.generateToken(employee);
-
-      res.json({
-        success: true,
-        message: '登录成功',
-        data: {
-          token,
-          employee: {
-            id: employee.id,
-            name: employee.name,
-            phone: employee.phone,
-            role: employee.role,
-            storeId: employee.storeId,
-            avatar: employee.avatar,
-            permissions: employee.permissions
-          }
-        }
-      });
     } catch (error) {
       res.status(500).json({
         success: false,
         message: '登录失败',
+        error: error.message
+      });
+    }
+  }
+
+  async refreshToken(req, res) {
+    try {
+      const { refreshToken } = req.body;
+
+      if (!refreshToken) {
+        return res.status(400).json({
+          success: false,
+          message: '刷新令牌不能为空'
+        });
+      }
+
+      try {
+        const result = await authService.refreshTokens(refreshToken);
+
+        res.json({
+          success: true,
+          message: '令牌刷新成功',
+          data: result
+        });
+      } catch (error) {
+        return res.status(401).json({
+          success: false,
+          message: error.message
+        });
+      }
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '令牌刷新失败',
         error: error.message
       });
     }
@@ -222,7 +185,7 @@ class AuthController {
       }
 
       const token = authHeader.substring(7);
-      const tokenData = this.verifyToken(token);
+      const tokenData = authService.verifyToken(token);
 
       if (!tokenData) {
         return res.status(401).json({
@@ -231,7 +194,7 @@ class AuthController {
         });
       }
 
-      const employee = employeeModel.findById(tokenData.employeeId);
+      const employee = employeeService.findById(tokenData.employeeId);
       if (!employee) {
         return res.status(401).json({
           success: false,
@@ -239,10 +202,11 @@ class AuthController {
         });
       }
 
-      if (employee.status !== 'active') {
+      const loginCheck = employeeService.canEmployeeLogin(employee);
+      if (!loginCheck.allowed) {
         return res.status(403).json({
           success: false,
-          message: '账号已被禁用，请联系管理员'
+          message: loginCheck.reason
         });
       }
 
@@ -257,7 +221,8 @@ class AuthController {
             storeId: employee.storeId,
             avatar: employee.avatar,
             permissions: employee.permissions
-          }
+          },
+          expiresAt: tokenData.expiresAt
         }
       });
     } catch (error) {
@@ -269,32 +234,26 @@ class AuthController {
     }
   }
 
-  generateToken(employee) {
-    const payload = {
-      employeeId: employee.id,
-      phone: employee.phone,
-      role: employee.role,
-      timestamp: Date.now()
-    };
-    
-    const jsonString = JSON.stringify(payload);
-    const base64 = Buffer.from(jsonString).toString('base64');
-    return base64;
-  }
-
-  verifyToken(token) {
+  async logout(req, res) {
     try {
-      const jsonString = Buffer.from(token, 'base64').toString('utf-8');
-      const payload = JSON.parse(jsonString);
-      
-      const expiryTime = 7 * 24 * 60 * 60 * 1000;
-      if (Date.now() - payload.timestamp > expiryTime) {
-        return null;
+      if (req.employee) {
+        auditService.log({
+          action: 'LOGOUT',
+          employeeId: req.employee.id,
+          data: { timestamp: new Date().toISOString() }
+        });
       }
-      
-      return payload;
+
+      res.json({
+        success: true,
+        message: '登出成功'
+      });
     } catch (error) {
-      return null;
+      res.status(500).json({
+        success: false,
+        message: '登出失败',
+        error: error.message
+      });
     }
   }
 }

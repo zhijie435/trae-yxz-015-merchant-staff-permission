@@ -1,28 +1,47 @@
-const employeeModel = require('../models/employee');
+const employeeService = require('../services/employeeService');
+const permissionService = require('../services/permissionService');
+const dataIsolationService = require('../services/dataIsolationService');
+const auditService = require('../services/auditService');
 
 class EmployeeController {
   async getEmployees(req, res) {
     try {
-      const { storeId, includePending } = req.query;
-      
+      const { storeId, includePending, includeRejected } = req.query;
+
       if (!storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
         });
       }
 
-      const employees = employeeModel.findByStoreId(storeId, includePending === 'true');
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
+        });
+      }
+
+      const employees = employeeService.findByStoreId(storeId, {
+        includePending: includePending === 'true',
+        includeRejected: includeRejected === 'true'
+      });
+
+      const filteredEmployees = req.isManager
+        ? employees
+        : employees.filter(emp => emp.id === req.employeeId);
+
       res.json({
         success: true,
-        data: employees,
-        total: employees.length
+        data: filteredEmployees,
+        total: filteredEmployees.length
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取员工列表失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取员工列表失败',
+        error: error.message
       });
     }
   }
@@ -30,79 +49,117 @@ class EmployeeController {
   async getPendingEmployees(req, res) {
     try {
       const { storeId } = req.query;
-      
+
       if (!storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
         });
       }
 
-      const employees = employeeModel.findPendingByStoreId(storeId);
+      if (!req.isManager) {
+        return res.status(403).json({
+          success: false,
+          message: '只有管理员可以查看待审核员工'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
+        });
+      }
+
+      const employees = employeeService.findPendingByStoreId(storeId);
+
       res.json({
         success: true,
         data: employees,
         total: employees.length
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取待审核员工列表失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取待审核员工列表失败',
+        error: error.message
       });
     }
   }
 
-  async approveEmployee(req, res) {
+  async getApprovedEmployees(req, res) {
     try {
-      const { id } = req.params;
+      const { storeId } = req.query;
 
-      const employee = employeeModel.approve(id);
-
-      if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+      if (!storeId) {
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
         });
       }
 
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
+        });
+      }
+
+      const employees = employeeService.findApprovedByStoreId(storeId);
+
       res.json({
         success: true,
-        message: '员工审核已通过',
-        data: employee
+        data: employees,
+        total: employees.length
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '审核通过操作失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取已审核员工列表失败',
+        error: error.message
       });
     }
   }
 
-  async rejectEmployee(req, res) {
+  async getEmployeeStats(req, res) {
     try {
-      const { id } = req.params;
+      const { storeId } = req.query;
 
-      const employee = employeeModel.reject(id);
-
-      if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+      if (!storeId) {
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
         });
       }
 
+      if (!req.isManager) {
+        return res.status(403).json({
+          success: false,
+          message: '只有管理员可以查看员工统计'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
+        });
+      }
+
+      const stats = employeeService.getAccountStatusCounts(storeId);
+
       res.json({
         success: true,
-        message: '员工审核已拒绝',
-        data: employee
+        data: stats
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '审核拒绝操作失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取员工统计失败',
+        error: error.message
       });
     }
   }
@@ -110,12 +167,20 @@ class EmployeeController {
   async getEmployeeById(req, res) {
     try {
       const { id } = req.params;
-      const employee = employeeModel.findById(id);
+      const employee = employeeService.findById(id);
 
       if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
+        });
+      }
+
+      const accessCheck = dataIsolationService.canAccessEmployee(req.employee, employee);
+      if (!accessCheck) {
+        return res.status(403).json({
+          success: false,
+          message: '无权限访问此员工信息'
         });
       }
 
@@ -124,10 +189,10 @@ class EmployeeController {
         data: employee
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取员工信息失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取员工信息失败',
+        error: error.message
       });
     }
   }
@@ -137,39 +202,55 @@ class EmployeeController {
       const { name, phone, role, password, storeId, idCardFront, idCardBack } = req.body;
 
       if (!name || !phone || !storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '姓名、手机号和门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '姓名、手机号和门店ID不能为空'
+        });
+      }
+
+      if (!req.isManager) {
+        return res.status(403).json({
+          success: false,
+          message: '只有管理员可以创建员工'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: '不能在其他门店创建员工'
         });
       }
 
       if (!idCardFront || !idCardBack) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '身份证照片正反面都必须上传' 
+        return res.status(400).json({
+          success: false,
+          message: '身份证照片正反面都必须上传'
         });
       }
 
-      const employee = await employeeModel.create({ 
-        name, 
-        phone, 
-        role, 
-        password,
-        storeId,
-        idCardFront,
-        idCardBack
-      });
+      const employee = await employeeService.createEmployee(
+        { name, phone, role, password, storeId, idCardFront, idCardBack },
+        req.employeeId
+      );
 
       res.status(201).json({
         success: true,
-        message: '员工创建成功',
+        message: '员工创建成功，等待审核',
         data: employee
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '创建员工失败', 
-        error: error.message 
+      if (error.message === '该手机号已注册') {
+        return res.status(400).json({
+          success: false,
+          message: error.message
+        });
+      }
+      res.status(500).json({
+        success: false,
+        message: '创建员工失败',
+        error: error.message
       });
     }
   }
@@ -179,14 +260,44 @@ class EmployeeController {
       const { id } = req.params;
       const updateData = req.body;
 
-      const employee = await employeeModel.update(id, updateData);
-
-      if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+      const targetEmployee = employeeService.findById(id);
+      if (!targetEmployee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
         });
       }
+
+      if (id === req.employeeId) {
+        return res.status(403).json({
+          success: false,
+          message: '不能修改自己的账号信息'
+        });
+      }
+
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        targetEmployee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      if (updateData.role && updateData.role !== targetEmployee.role) {
+        if (!req.isManager) {
+          return res.status(403).json({
+            success: false,
+            message: '只有管理员可以修改员工角色'
+          });
+        }
+      }
+
+      const employee = await employeeService.updateEmployee(id, updateData, req.employeeId);
 
       res.json({
         success: true,
@@ -194,10 +305,10 @@ class EmployeeController {
         data: employee
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '更新员工信息失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '更新员工信息失败',
+        error: error.message
       });
     }
   }
@@ -205,21 +316,30 @@ class EmployeeController {
   async updatePassword(req, res) {
     try {
       const { id } = req.params;
-      const { newPassword } = req.body;
+      const { newPassword, currentPassword } = req.body;
 
       if (!newPassword) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '新密码不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '新密码不能为空'
         });
       }
 
-      const result = await employeeModel.updatePassword(id, newPassword);
+      if (id === req.employeeId) {
+        if (!currentPassword) {
+          return res.status(400).json({
+            success: false,
+            message: '修改自己的密码需要提供当前密码'
+          });
+        }
+      }
+
+      const result = await employeeService.updatePassword(id, newPassword, req.employeeId);
 
       if (!result) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
         });
       }
 
@@ -229,10 +349,169 @@ class EmployeeController {
         data: result
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '更新密码失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '更新密码失败',
+        error: error.message
+      });
+    }
+  }
+
+  async approveEmployee(req, res) {
+    try {
+      const { id } = req.params;
+
+      const employee = employeeService.findById(id);
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
+        });
+      }
+
+      const approveCheck = dataIsolationService.canApproveEmployee(req.employee, employee);
+      if (!approveCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: approveCheck.reason
+        });
+      }
+
+      const approvedEmployee = await employeeService.approveEmployee(id, req.employeeId);
+
+      res.json({
+        success: true,
+        message: '员工审核已通过',
+        data: approvedEmployee
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '审核通过操作失败',
+        error: error.message
+      });
+    }
+  }
+
+  async rejectEmployee(req, res) {
+    try {
+      const { id } = req.params;
+      const { reason } = req.body;
+
+      const employee = employeeService.findById(id);
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
+        });
+      }
+
+      const approveCheck = dataIsolationService.canApproveEmployee(req.employee, employee);
+      if (!approveCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: approveCheck.reason
+        });
+      }
+
+      const rejectedEmployee = await employeeService.rejectEmployee(
+        id,
+        req.employeeId,
+        reason || ''
+      );
+
+      res.json({
+        success: true,
+        message: '员工审核已拒绝',
+        data: rejectedEmployee
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '审核拒绝操作失败',
+        error: error.message
+      });
+    }
+  }
+
+  async activateEmployee(req, res) {
+    try {
+      const { id } = req.params;
+
+      const employee = employeeService.findById(id);
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
+        });
+      }
+
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        employee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      const activatedEmployee = await employeeService.activateEmployee(id, req.employeeId);
+
+      res.json({
+        success: true,
+        message: '员工账号已启用',
+        data: activatedEmployee
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '启用员工失败',
+        error: error.message
+      });
+    }
+  }
+
+  async deactivateEmployee(req, res) {
+    try {
+      const { id } = req.params;
+
+      const employee = employeeService.findById(id);
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
+        });
+      }
+
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        employee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      const deactivatedEmployee = await employeeService.deactivateEmployee(id, req.employeeId);
+
+      res.json({
+        success: true,
+        message: '员工账号已禁用',
+        data: deactivatedEmployee
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '禁用员工失败',
+        error: error.message
       });
     }
   }
@@ -241,26 +520,45 @@ class EmployeeController {
     try {
       const { id } = req.params;
 
-      const employee = employeeModel.toggleStatus(id);
-
+      const employee = employeeService.findById(id);
       if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
         });
       }
 
-      const action = employee.status === 'active' ? '启用' : '禁用';
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        employee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      let result;
+      if (employee.status === 'active') {
+        result = await employeeService.deactivateEmployee(id, req.employeeId);
+      } else {
+        result = await employeeService.activateEmployee(id, req.employeeId);
+      }
+
+      const action = result.status === 'active' ? '启用' : '禁用';
       res.json({
         success: true,
         message: `员工账号已${action}`,
-        data: employee
+        data: result
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '更新员工状态失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '更新员工状态失败',
+        error: error.message
       });
     }
   }
@@ -268,24 +566,39 @@ class EmployeeController {
   async deleteEmployee(req, res) {
     try {
       const { id } = req.params;
-      const deleted = employeeModel.delete(id);
 
-      if (!deleted) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+      const employee = employeeService.findById(id);
+      if (!employee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
         });
       }
+
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        employee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      await employeeService.deleteEmployee(id, req.employeeId);
 
       res.json({
         success: true,
         message: '员工删除成功'
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '删除员工失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '删除员工失败',
+        error: error.message
       });
     }
   }
@@ -296,20 +609,38 @@ class EmployeeController {
       const { permissions } = req.body;
 
       if (!Array.isArray(permissions)) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '权限必须是数组格式' 
+        return res.status(400).json({
+          success: false,
+          message: '权限必须是数组格式'
         });
       }
 
-      const employee = await employeeModel.updatePermissions(id, permissions);
-
-      if (!employee) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '员工不存在' 
+      const targetEmployee = employeeService.findById(id);
+      if (!targetEmployee) {
+        return res.status(404).json({
+          success: false,
+          message: '员工不存在'
         });
       }
+
+      const manageCheck = dataIsolationService.canManageEmployee(
+        req.employee,
+        id,
+        targetEmployee
+      );
+
+      if (!manageCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: manageCheck.reason
+        });
+      }
+
+      const employee = await employeeService.updatePermissions(
+        id,
+        permissions,
+        req.employeeId
+      );
 
       res.json({
         success: true,
@@ -317,10 +648,64 @@ class EmployeeController {
         data: employee
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '更新员工权限失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '更新员工权限失败',
+        error: error.message
+      });
+    }
+  }
+
+  async getPermissions(req, res) {
+    try {
+      const allPermissions = permissionService.getAllPermissions();
+      const permissionGroups = permissionService.getPermissionGroups();
+      const permissionDetails = permissionService.getAllPermissionDetails();
+
+      res.json({
+        success: true,
+        data: {
+          all: allPermissions,
+          groups: permissionGroups,
+          details: permissionDetails
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '获取权限列表失败',
+        error: error.message
+      });
+    }
+  }
+
+  async getAuditLogs(req, res) {
+    try {
+      if (!req.isManager) {
+        return res.status(403).json({
+          success: false,
+          message: '只有管理员可以查看审计日志'
+        });
+      }
+
+      const { employeeId, action, limit } = req.query;
+
+      const logs = auditService.getLogs({
+        employeeId,
+        action,
+        limit: limit ? parseInt(limit) : 100
+      });
+
+      res.json({
+        success: true,
+        data: logs,
+        total: logs.length
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: '获取审计日志失败',
+        error: error.message
       });
     }
   }

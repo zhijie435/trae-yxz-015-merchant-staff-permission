@@ -1,46 +1,62 @@
 import apiClient from './index';
 
 export default {
-  getEmployees(storeId) {
-    return apiClient.get(`/employees?storeId=${storeId}`);
+  getEmployees(storeId, includePending = false) {
+    return apiClient.get(`/employees?storeId=${storeId}&includePending=${includePending}`);
   },
-  
+
   getPendingEmployees(storeId) {
     return apiClient.get(`/employees/pending?storeId=${storeId}`);
   },
-  
+
+  getApprovedEmployees(storeId) {
+    return apiClient.get(`/employees/approved?storeId=${storeId}`);
+  },
+
+  getEmployeeStats(storeId) {
+    return apiClient.get(`/employees/stats?storeId=${storeId}`);
+  },
+
   getEmployeeById(id) {
     return apiClient.get(`/employees/${id}`);
   },
-  
+
   createEmployee(employeeData) {
     return apiClient.post('/employees', employeeData);
   },
-  
+
   updateEmployee(id, updateData) {
     return apiClient.put(`/employees/${id}`, updateData);
   },
-  
-  updatePassword(id, newPassword) {
-    return apiClient.put(`/employees/${id}/password`, { newPassword });
+
+  updatePassword(id, newPassword, currentPassword = null) {
+    return apiClient.put(`/employees/${id}/password`, { newPassword, currentPassword });
   },
-  
+
   toggleEmployeeStatus(id) {
     return apiClient.patch(`/employees/${id}/status`);
   },
-  
+
+  activateEmployee(id) {
+    return apiClient.patch(`/employees/${id}/activate`);
+  },
+
+  deactivateEmployee(id) {
+    return apiClient.patch(`/employees/${id}/deactivate`);
+  },
+
   approveEmployee(id) {
     return apiClient.patch(`/employees/${id}/approve`);
   },
-  
-  rejectEmployee(id) {
-    return apiClient.patch(`/employees/${id}/reject`);
+
+  rejectEmployee(id, reason = '') {
+    return apiClient.patch(`/employees/${id}/reject`, { reason });
   },
-  
+
   deleteEmployee(id) {
     return apiClient.delete(`/employees/${id}`);
   },
-  
+
   uploadAvatar(file) {
     const formData = new FormData();
     formData.append('avatar', file);
@@ -50,7 +66,7 @@ export default {
       }
     });
   },
-  
+
   uploadIdCard(frontFile, backFile) {
     const formData = new FormData();
     if (frontFile) {
@@ -68,5 +84,13 @@ export default {
 
   updatePermissions(id, permissions) {
     return apiClient.put(`/employees/${id}/permissions`, { permissions });
+  },
+
+  getPermissions() {
+    return apiClient.get('/employees/permissions');
+  },
+
+  getAuditLogs(params = {}) {
+    return apiClient.get('/employees/audit-logs', { params });
   }
 };

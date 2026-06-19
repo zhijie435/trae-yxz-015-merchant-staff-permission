@@ -131,3 +131,110 @@ export const PERMISSION_DETAILS = {
 };
 
 export const DEFAULT_PERMISSIONS = ['cashier', 'product_view'];
+
+export const ACCOUNT_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+  ACTIVE: 'active',
+  INACTIVE: 'inactive'
+};
+
+export const ROLES = {
+  MANAGER: 'manager',
+  STAFF: 'staff'
+};
+
+export function hasPermission(userPermissions, requiredPermission) {
+  if (!Array.isArray(userPermissions)) {
+    return false;
+  }
+  return userPermissions.includes(requiredPermission);
+}
+
+export function hasAnyPermission(userPermissions, requiredPermissions) {
+  if (!Array.isArray(userPermissions) || !Array.isArray(requiredPermissions)) {
+    return false;
+  }
+  return requiredPermissions.some(permission => userPermissions.includes(permission));
+}
+
+export function hasAllPermissions(userPermissions, requiredPermissions) {
+  if (!Array.isArray(userPermissions) || !Array.isArray(requiredPermissions)) {
+    return false;
+  }
+  return requiredPermissions.every(permission => userPermissions.includes(permission));
+}
+
+export function hasGroupPermission(userPermissions, group) {
+  if (!group || !Array.isArray(group.permissions)) {
+    return false;
+  }
+  return hasAllPermissions(userPermissions, group.permissions);
+}
+
+export function canManageEmployee(currentUser, targetEmployee) {
+  if (currentUser.id === targetEmployee.id) {
+    return false;
+  }
+
+  if (currentUser.role === 'manager' && currentUser.storeId === targetEmployee.storeId) {
+    return true;
+  }
+
+  return false;
+}
+
+export function canApproveEmployee(currentUser, targetEmployee) {
+  if (currentUser.role !== 'manager') {
+    return false;
+  }
+
+  if (currentUser.storeId !== targetEmployee.storeId) {
+    return false;
+  }
+
+  if (targetEmployee.approvalStatus !== 'pending') {
+    return false;
+  }
+
+  return true;
+}
+
+export function getAccountStatusLabel(status) {
+  const labels = {
+    pending: '待审核',
+    approved: '已通过',
+    rejected: '已拒绝',
+    active: '启用',
+    inactive: '禁用'
+  };
+  return labels[status] || status;
+}
+
+export function getAccountStatusColor(status) {
+  const colors = {
+    pending: 'warning',
+    approved: 'success',
+    rejected: 'danger',
+    active: 'success',
+    inactive: 'info'
+  };
+  return colors[status] || 'info';
+}
+
+export function getRoleLabel(role) {
+  const labels = {
+    manager: '管理员',
+    staff: '员工'
+  };
+  return labels[role] || role;
+}
+
+export function getRoleColor(role) {
+  const colors = {
+    manager: 'primary',
+    staff: 'default'
+  };
+  return colors[role] || 'default';
+}

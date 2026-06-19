@@ -22,7 +22,14 @@ class EmployeeModel {
         permissions: Object.values(permissionsConfig.PERMISSIONS),
         status: 'active',
         approvalStatus: 'approved',
-        createdAt: new Date().toISOString()
+        accountStatus: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+        approvedBy: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null
       },
       {
         id: uuidv4(),
@@ -36,7 +43,14 @@ class EmployeeModel {
         permissions: permissionsConfig.DEFAULT_PERMISSIONS,
         status: 'active',
         approvalStatus: 'approved',
-        createdAt: new Date().toISOString()
+        accountStatus: 'active',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+        approvedBy: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null
       },
       {
         id: uuidv4(),
@@ -49,7 +63,15 @@ class EmployeeModel {
         idCardBack: '',
         permissions: permissionsConfig.DEFAULT_PERMISSIONS,
         status: 'inactive',
-        createdAt: new Date().toISOString()
+        approvalStatus: 'approved',
+        accountStatus: 'inactive',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        approvedAt: new Date().toISOString(),
+        approvedBy: null,
+        rejectedAt: null,
+        rejectedBy: null,
+        rejectionReason: null
       }
     ];
 
@@ -61,7 +83,7 @@ class EmployeeModel {
   async create(employeeData) {
     const id = uuidv4();
     const hashedPassword = await bcrypt.hash(employeeData.password || '123456', 10);
-    
+
     const employee = {
       id,
       name: employeeData.name,
@@ -72,12 +94,19 @@ class EmployeeModel {
       avatar: employeeData.avatar || '',
       idCardFront: employeeData.idCardFront || '',
       idCardBack: employeeData.idCardBack || '',
-      permissions: employeeData.role === 'manager' 
-        ? Object.values(permissionsConfig.PERMISSIONS) 
+      permissions: employeeData.role === 'manager'
+        ? Object.values(permissionsConfig.PERMISSIONS)
         : (employeeData.permissions || permissionsConfig.DEFAULT_PERMISSIONS),
-      status: 'active',
+      status: 'pending',
       approvalStatus: 'pending',
-      createdAt: new Date().toISOString()
+      accountStatus: 'pending',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      approvedAt: null,
+      approvedBy: null,
+      rejectedAt: null,
+      rejectedBy: null,
+      rejectionReason: null
     };
 
     this.employees.set(id, employee);
@@ -133,6 +162,10 @@ class EmployeeModel {
     return emp ? this.formatEmployee(emp) : null;
   }
 
+  findByIdWithPassword(id) {
+    return this.employees.get(id);
+  }
+
   findByPhone(phone) {
     let found = null;
     this.employees.forEach(emp => {
@@ -141,6 +174,16 @@ class EmployeeModel {
       }
     });
     return found ? this.formatEmployee(found) : null;
+  }
+
+  findByPhoneWithPassword(phone) {
+    let found = null;
+    this.employees.forEach(emp => {
+      if (emp.phone === phone) {
+        found = emp;
+      }
+    });
+    return found;
   }
 
   async update(id, updateData) {

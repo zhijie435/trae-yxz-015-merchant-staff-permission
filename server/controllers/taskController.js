@@ -1,43 +1,53 @@
 const taskModel = require('../models/task');
 const employeeModel = require('../models/employee');
+const employeeService = require('../services/employeeService');
+const dataIsolationService = require('../services/dataIsolationService');
 
 class TaskController {
   async getTasks(req, res) {
     try {
       const { storeId, employeeId, isManager } = req.query;
-      
+
       if (!storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
         });
       }
 
       const tasks = taskModel.findByStoreId(
-        storeId, 
-        employeeId || null, 
-        isManager === 'true'
+        storeId,
+        req.employeeId,
+        req.isManager
       );
-      
+
       const tasksWithEmployeeInfo = await Promise.all(
         tasks.map(async (task) => {
           const taskData = { ...task };
-          
+
           if (task.assigneeId) {
-            const assignee = employeeModel.findById(task.assigneeId);
+            const assignee = employeeService.findById(task.assigneeId);
             if (assignee) {
               taskData.assigneeName = assignee.name;
               taskData.assigneeRole = assignee.role;
             }
           }
-          
+
           if (task.creatorId) {
-            const creator = employeeModel.findById(task.creatorId);
+            const creator = employeeService.findById(task.creatorId);
             if (creator) {
               taskData.creatorName = creator.name;
             }
           }
-          
+
           return taskData;
         })
       );
@@ -48,29 +58,37 @@ class TaskController {
         total: tasksWithEmployeeInfo.length
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取任务列表失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取任务列表失败',
+        error: error.message
       });
     }
   }
 
   async getTaskStats(req, res) {
     try {
-      const { storeId, employeeId, isManager } = req.query;
-      
+      const { storeId } = req.query;
+
       if (!storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '门店ID不能为空'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
         });
       }
 
       const stats = taskModel.getStats(
-        storeId, 
-        employeeId || null, 
-        isManager === 'true'
+        storeId,
+        req.employeeId,
+        req.isManager
       );
 
       res.json({
@@ -78,10 +96,10 @@ class TaskController {
         data: stats
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取任务统计失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取任务统计失败',
+        error: error.message
       });
     }
   }
@@ -89,30 +107,37 @@ class TaskController {
   async getTaskById(req, res) {
     try {
       const { id } = req.params;
-      const { employeeId, isManager } = req.query;
       const task = taskModel.findById(id);
 
       if (!task) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '任务不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '任务不存在'
         });
       }
 
-      if (isManager !== 'true' && employeeId && task.assigneeId !== employeeId) {
-        return res.status(403).json({ 
-          success: false, 
-          message: '无权限访问此任务' 
+      const accessCheck = dataIsolationService.canAccessTask(req.employee, task);
+      if (!accessCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: accessCheck.reason
         });
       }
 
       const taskData = { ...task };
-      
+
       if (task.assigneeId) {
-        const assignee = employeeModel.findById(task.assigneeId);
+        const assignee = employeeService.findById(task.assigneeId);
         if (assignee) {
           taskData.assigneeName = assignee.name;
           taskData.assigneeRole = assignee.role;
+        }
+      }
+
+      if (task.creatorId) {
+        const creator = employeeService.findById(task.creatorId);
+        if (creator) {
+          taskData.creatorName = creator.name;
         }
       }
 
@@ -121,50 +146,72 @@ class TaskController {
         data: taskData
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '获取任务详情失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '获取任务详情失败',
+        error: error.message
       });
     }
   }
 
   async createTask(req, res) {
     try {
-      const { title, description, storeId, assigneeId, priority, dueDate, creatorId } = req.body;
+      const { title, description, storeId, assigneeId, priority, dueDate } = req.body;
 
       if (!title || !storeId) {
-        return res.status(400).json({ 
-          success: false, 
-          message: '任务标题和门店ID不能为空' 
+        return res.status(400).json({
+          success: false,
+          message: '任务标题和门店ID不能为空'
+        });
+      }
+
+      const storeAccess = dataIsolationService.validateStoreAccess(req.employee, storeId);
+      if (!storeAccess.valid) {
+        return res.status(403).json({
+          success: false,
+          message: storeAccess.message
+        });
+      }
+
+      if (!req.isManager) {
+        return res.status(403).json({
+          success: false,
+          message: '只有管理员可以创建任务'
         });
       }
 
       if (assigneeId) {
-        const employee = employeeModel.findById(assigneeId);
+        const employee = employeeService.findById(assigneeId);
         if (!employee) {
-          return res.status(400).json({ 
-            success: false, 
-            message: '指定的员工不存在' 
+          return res.status(400).json({
+            success: false,
+            message: '指定的员工不存在'
           });
         }
-        
+
         if (employee.approvalStatus !== 'approved') {
-          return res.status(400).json({ 
-            success: false, 
-            message: '只能指派给已审核通过的员工' 
+          return res.status(400).json({
+            success: false,
+            message: '只能指派给已审核通过的员工'
+          });
+        }
+
+        if (employee.storeId !== storeId) {
+          return res.status(400).json({
+            success: false,
+            message: '只能指派给本门店的员工'
           });
         }
       }
 
-      const task = taskModel.create({ 
-        title, 
-        description, 
-        storeId, 
+      const task = taskModel.create({
+        title,
+        description,
+        storeId,
         assigneeId,
-        creatorId,
-        priority, 
-        dueDate 
+        creatorId: req.employeeId,
+        priority,
+        dueDate
       });
 
       res.status(201).json({
@@ -173,10 +220,10 @@ class TaskController {
         data: task
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '创建任务失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '创建任务失败',
+        error: error.message
       });
     }
   }
@@ -184,46 +231,58 @@ class TaskController {
   async updateTask(req, res) {
     try {
       const { id } = req.params;
-      const { employeeId, isManager } = req.query;
       const updateData = req.body;
 
       const existingTask = taskModel.findById(id);
       if (!existingTask) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '任务不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '任务不存在'
         });
       }
 
-      if (isManager !== 'true' && employeeId) {
-        if (existingTask.assigneeId !== employeeId) {
-          return res.status(403).json({ 
-            success: false, 
-            message: '只能更新被指派给您的任务' 
-          });
-        }
+      const accessCheck = dataIsolationService.canUpdateTask(req.employee, existingTask);
+      if (!accessCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: accessCheck.reason
+        });
+      }
 
-        if (updateData.assigneeId && updateData.assigneeId !== employeeId) {
-          return res.status(403).json({ 
-            success: false, 
-            message: '普通员工不能将任务指派给他人' 
+      if (updateData.assigneeId && updateData.assigneeId !== existingTask.assigneeId) {
+        const assignCheck = dataIsolationService.canAssignTask(
+          req.employee,
+          existingTask,
+          updateData.assigneeId
+        );
+        if (!assignCheck.allowed) {
+          return res.status(403).json({
+            success: false,
+            message: assignCheck.reason
           });
         }
       }
 
       if (updateData.assigneeId) {
-        const employee = employeeModel.findById(updateData.assigneeId);
+        const employee = employeeService.findById(updateData.assigneeId);
         if (!employee) {
-          return res.status(400).json({ 
-            success: false, 
-            message: '指定的员工不存在' 
+          return res.status(400).json({
+            success: false,
+            message: '指定的员工不存在'
           });
         }
-        
+
         if (employee.approvalStatus !== 'approved') {
-          return res.status(400).json({ 
-            success: false, 
-            message: '只能指派给已审核通过的员工' 
+          return res.status(400).json({
+            success: false,
+            message: '只能指派给已审核通过的员工'
+          });
+        }
+
+        if (employee.storeId !== existingTask.storeId) {
+          return res.status(400).json({
+            success: false,
+            message: '只能指派给本门店的员工'
           });
         }
       }
@@ -236,10 +295,10 @@ class TaskController {
         data: task
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '更新任务失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '更新任务失败',
+        error: error.message
       });
     }
   }
@@ -250,23 +309,31 @@ class TaskController {
 
       const task = taskModel.findById(id);
       if (!task) {
-        return res.status(404).json({ 
-          success: false, 
-          message: '任务不存在' 
+        return res.status(404).json({
+          success: false,
+          message: '任务不存在'
         });
       }
 
-      const deleted = taskModel.delete(id);
+      const accessCheck = dataIsolationService.canDeleteTask(req.employee, task);
+      if (!accessCheck.allowed) {
+        return res.status(403).json({
+          success: false,
+          message: accessCheck.reason
+        });
+      }
+
+      taskModel.delete(id);
 
       res.json({
         success: true,
         message: '任务删除成功'
       });
     } catch (error) {
-      res.status(500).json({ 
-        success: false, 
-        message: '删除任务失败', 
-        error: error.message 
+      res.status(500).json({
+        success: false,
+        message: '删除任务失败',
+        error: error.message
       });
     }
   }
