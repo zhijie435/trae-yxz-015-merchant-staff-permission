@@ -15,6 +15,9 @@ class EmployeeModel {
         phone: '13800138001',
         role: 'manager',
         storeId: 'store001',
+        avatar: '',
+        idCardFront: '',
+        idCardBack: '',
         status: 'active',
         createdAt: new Date().toISOString()
       },
@@ -24,6 +27,9 @@ class EmployeeModel {
         phone: '13800138002',
         role: 'staff',
         storeId: 'store001',
+        avatar: '',
+        idCardFront: '',
+        idCardBack: '',
         status: 'active',
         createdAt: new Date().toISOString()
       },
@@ -33,6 +39,9 @@ class EmployeeModel {
         phone: '13800138003',
         role: 'staff',
         storeId: 'store001',
+        avatar: '',
+        idCardFront: '',
+        idCardBack: '',
         status: 'inactive',
         createdAt: new Date().toISOString()
       }
@@ -51,9 +60,12 @@ class EmployeeModel {
       id,
       name: employeeData.name,
       phone: employeeData.phone,
+      password: hashedPassword,
       role: employeeData.role || 'staff',
       storeId: employeeData.storeId || 'store001',
-      password: hashedPassword,
+      avatar: employeeData.avatar || '',
+      idCardFront: employeeData.idCardFront || '',
+      idCardBack: employeeData.idCardBack || '',
       status: 'active',
       createdAt: new Date().toISOString()
     };
@@ -87,6 +99,9 @@ class EmployeeModel {
     if (updateData.phone) emp.phone = updateData.phone;
     if (updateData.role) emp.role = updateData.role;
     if (updateData.status) emp.status = updateData.status;
+    if (updateData.avatar !== undefined) emp.avatar = updateData.avatar;
+    if (updateData.idCardFront !== undefined) emp.idCardFront = updateData.idCardFront;
+    if (updateData.idCardBack !== undefined) emp.idCardBack = updateData.idCardBack;
 
     this.employees.set(id, emp);
     return this.formatEmployee(emp);

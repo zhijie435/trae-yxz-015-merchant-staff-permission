@@ -43,5 +43,30 @@ export default {
   
   deleteEmployee(id) {
     return apiClient.delete(`/employees/${id}`);
+  },
+  
+  uploadAvatar(file) {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    return apiClient.post('/upload/avatar', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+  },
+  
+  uploadIdCard(frontFile, backFile) {
+    const formData = new FormData();
+    if (frontFile) {
+      formData.append('front', frontFile);
+    }
+    if (backFile) {
+      formData.append('back', backFile);
+    }
+    return apiClient.post('/upload/idcard', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
   }
 };
