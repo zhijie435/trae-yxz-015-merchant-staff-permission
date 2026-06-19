@@ -1,4 +1,4 @@
-const permissionsConfig = require('./permissions');
+const permissionsConfig = require('../config/permissions');
 
 class PermissionService {
   constructor() {

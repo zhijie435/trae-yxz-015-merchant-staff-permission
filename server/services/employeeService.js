@@ -59,7 +59,7 @@ class EmployeeService {
       auditService.log({
         action: 'EMPLOYEE_CREATED',
         employeeId: id,
-        createdBy,
+        performedBy: createdBy,
         data: { name: employeeData.name, phone: employeeData.phone, role: employeeData.role }
       });
     }
@@ -348,6 +348,10 @@ class EmployeeService {
   findById(id) {
     const emp = employeeModel.employees.get(id);
     return emp ? this.formatEmployee(emp) : null;
+  }
+
+  findByIdWithPassword(id) {
+    return employeeModel.employees.get(id);
   }
 
   findByPhone(phone) {

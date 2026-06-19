@@ -164,7 +164,7 @@ class AuthService {
 
     if (password) {
       const bcrypt = require('bcryptjs');
-      const emp = employeeService.findById(employee.id);
+      const emp = employeeService.findByIdWithPassword(employee.id);
       const isPasswordValid = await bcrypt.compare(password, emp.password);
       if (!isPasswordValid) {
         auditService.log({
