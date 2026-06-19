@@ -21,6 +21,10 @@ export default {
     return apiClient.get(`/employees?storeId=${storeId}`);
   },
   
+  getPendingEmployees(storeId) {
+    return apiClient.get(`/employees/pending?storeId=${storeId}`);
+  },
+  
   getEmployeeById(id) {
     return apiClient.get(`/employees/${id}`);
   },
@@ -39,6 +43,14 @@ export default {
   
   toggleEmployeeStatus(id) {
     return apiClient.patch(`/employees/${id}/status`);
+  },
+  
+  approveEmployee(id) {
+    return apiClient.patch(`/employees/${id}/approve`);
+  },
+  
+  rejectEmployee(id) {
+    return apiClient.patch(`/employees/${id}/reject`);
   },
   
   deleteEmployee(id) {

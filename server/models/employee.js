@@ -21,6 +21,7 @@ class EmployeeModel {
         idCardBack: '',
         permissions: Object.values(permissionsConfig.PERMISSIONS),
         status: 'active',
+        approvalStatus: 'approved',
         createdAt: new Date().toISOString()
       },
       {
@@ -34,6 +35,7 @@ class EmployeeModel {
         idCardBack: '',
         permissions: permissionsConfig.DEFAULT_PERMISSIONS,
         status: 'active',
+        approvalStatus: 'approved',
         createdAt: new Date().toISOString()
       },
       {
@@ -74,6 +76,7 @@ class EmployeeModel {
         ? Object.values(permissionsConfig.PERMISSIONS) 
         : (employeeData.permissions || permissionsConfig.DEFAULT_PERMISSIONS),
       status: 'active',
+      approvalStatus: 'pending',
       createdAt: new Date().toISOString()
     };
 
@@ -81,14 +84,48 @@ class EmployeeModel {
     return this.formatEmployee(employee);
   }
 
-  findByStoreId(storeId) {
+  findByStoreId(storeId, includePending = false) {
     const results = [];
     this.employees.forEach(emp => {
       if (emp.storeId === storeId) {
+        if (includePending || emp.approvalStatus === 'approved') {
+          results.push(this.formatEmployee(emp));
+        }
+      }
+    });
+    return results;
+  }
+
+  findPendingByStoreId(storeId) {
+    const results = [];
+    this.employees.forEach(emp => {
+      if (emp.storeId === storeId && emp.approvalStatus === 'pending') {
         results.push(this.formatEmployee(emp));
       }
     });
     return results;
+  }
+
+  approve(id) {
+    const emp = this.employees.get(id);
+    if (!emp) {
+      return null;
+    }
+
+    emp.approvalStatus = 'approved';
+    this.employees.set(id, emp);
+    return this.formatEmployee(emp);
+  }
+
+  reject(id) {
+    const emp = this.employees.get(id);
+    if (!emp) {
+      return null;
+    }
+
+    emp.approvalStatus = 'rejected';
+    this.employees.set(id, emp);
+    return this.formatEmployee(emp);
   }
 
   findById(id) {

@@ -3,7 +3,7 @@ const employeeModel = require('../models/employee');
 class EmployeeController {
   async getEmployees(req, res) {
     try {
-      const { storeId } = req.query;
+      const { storeId, includePending } = req.query;
       
       if (!storeId) {
         return res.status(400).json({ 
@@ -12,7 +12,7 @@ class EmployeeController {
         });
       }
 
-      const employees = employeeModel.findByStoreId(storeId);
+      const employees = employeeModel.findByStoreId(storeId, includePending === 'true');
       res.json({
         success: true,
         data: employees,
@@ -22,6 +22,86 @@ class EmployeeController {
       res.status(500).json({ 
         success: false, 
         message: '获取员工列表失败', 
+        error: error.message 
+      });
+    }
+  }
+
+  async getPendingEmployees(req, res) {
+    try {
+      const { storeId } = req.query;
+      
+      if (!storeId) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '门店ID不能为空' 
+        });
+      }
+
+      const employees = employeeModel.findPendingByStoreId(storeId);
+      res.json({
+        success: true,
+        data: employees,
+        total: employees.length
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        message: '获取待审核员工列表失败', 
+        error: error.message 
+      });
+    }
+  }
+
+  async approveEmployee(req, res) {
+    try {
+      const { id } = req.params;
+
+      const employee = employeeModel.approve(id);
+
+      if (!employee) {
+        return res.status(404).json({ 
+          success: false, 
+          message: '员工不存在' 
+        });
+      }
+
+      res.json({
+        success: true,
+        message: '员工审核已通过',
+        data: employee
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        message: '审核通过操作失败', 
+        error: error.message 
+      });
+    }
+  }
+
+  async rejectEmployee(req, res) {
+    try {
+      const { id } = req.params;
+
+      const employee = employeeModel.reject(id);
+
+      if (!employee) {
+        return res.status(404).json({ 
+          success: false, 
+          message: '员工不存在' 
+        });
+      }
+
+      res.json({
+        success: true,
+        message: '员工审核已拒绝',
+        data: employee
+      });
+    } catch (error) {
+      res.status(500).json({ 
+        success: false, 
+        message: '审核拒绝操作失败', 
         error: error.message 
       });
     }

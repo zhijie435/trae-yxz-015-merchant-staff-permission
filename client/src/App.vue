@@ -11,6 +11,10 @@
           <span class="icon">+</span>
           新增员工
         </button>
+        <button class="btn btn-warning" @click="openApprovalModal" v-if="pendingCount > 0">
+          <span class="icon">⏳</span>
+          待审核 ({{ pendingCount }})
+        </button>
       </div>
 
       <div class="employee-table">
@@ -332,6 +336,65 @@
       </div>
     </div>
 
+    <div v-if="showApprovalModal" class="modal-overlay" @click.self="closeApprovalModal">
+      <div class="modal modal-large">
+        <div class="modal-header">
+          <h2>待审核员工</h2>
+          <button class="modal-close" @click="closeApprovalModal">×</button>
+        </div>
+        <div class="modal-body">
+          <div v-if="pendingEmployees.length === 0" class="empty-state">
+            暂无待审核员工
+          </div>
+          <div v-else class="approval-list">
+            <div v-for="emp in pendingEmployees" :key="emp.id" class="approval-item">
+              <div class="approval-info">
+                <img 
+                  v-if="emp.avatar" 
+                  :src="getFullImageUrl(emp.avatar)" 
+                  class="avatar-thumbnail"
+                />
+                <span v-else class="no-avatar">无</span>
+                <div class="approval-details">
+                  <div class="approval-name">{{ emp.name }}</div>
+                  <div class="approval-meta">
+                    <span class="role-tag" :class="emp.role">
+                      {{ emp.role === 'manager' ? '管理员' : '员工' }}
+                    </span>
+                    <span>{{ emp.phone }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="approval-idcard" v-if="emp.idCardFront || emp.idCardBack">
+                <div class="idcard-images">
+                  <img 
+                    v-if="emp.idCardFront" 
+                    :src="getFullImageUrl(emp.idCardFront)" 
+                    class="idcard-image"
+                    title="身份证正面"
+                  />
+                  <img 
+                    v-if="emp.idCardBack" 
+                    :src="getFullImageUrl(emp.idCardBack)" 
+                    class="idcard-image"
+                    title="身份证反面"
+                  />
+                </div>
+              </div>
+              <div class="approval-actions">
+                <button class="btn btn-success btn-sm" @click="approveEmployee(emp)">
+                  ✓ 通过
+                </button>
+                <button class="btn btn-danger btn-sm" @click="rejectEmployee(emp)">
+                  ✕ 拒绝
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div v-if="loading" class="loading-overlay">
       <div class="loading-spinner"></div>
     </div>
@@ -357,7 +420,10 @@ export default {
       showPasswordChangeModal: false,
       showViewModal: false,
       showPermissionModal: false,
+      showApprovalModal: false,
       currentEmployee: null,
+      pendingEmployees: [],
+      pendingCount: 0,
       viewEmployee: null,
       submitting: false,
       savingPermissions: false,
@@ -412,11 +478,78 @@ export default {
         if (response.success) {
           this.employees = response.data;
         }
+        await this.loadPendingCount();
       } catch (error) {
         console.error('加载员工列表失败:', error);
         alert('加载员工列表失败');
       } finally {
         this.loading = false;
+      }
+    },
+
+    async loadPendingCount() {
+      try {
+        const response = await api.getPendingEmployees(this.storeId);
+        if (response.success) {
+          this.pendingCount = response.total;
+        }
+      } catch (error) {
+        console.error('获取待审核数量失败:', error);
+      }
+    },
+
+    async openApprovalModal() {
+      try {
+        const response = await api.getPendingEmployees(this.storeId);
+        if (response.success) {
+          this.pendingEmployees = response.data;
+          this.showApprovalModal = true;
+        }
+      } catch (error) {
+        console.error('获取待审核列表失败:', error);
+        alert('获取待审核列表失败');
+      }
+    },
+
+    closeApprovalModal() {
+      this.showApprovalModal = false;
+      this.pendingEmployees = [];
+    },
+
+    async approveEmployee(employee) {
+      if (!confirm(`确定要通过员工 ${employee.name} 的审核吗?`)) {
+        return;
+      }
+
+      try {
+        const response = await api.approveEmployee(employee.id);
+        if (response.success) {
+          alert('员工审核已通过');
+          this.pendingEmployees = this.pendingEmployees.filter(e => e.id !== employee.id);
+          await this.loadPendingCount();
+          await this.loadEmployees();
+        }
+      } catch (error) {
+        console.error('审核通过失败:', error);
+        alert('操作失败，请重试');
+      }
+    },
+
+    async rejectEmployee(employee) {
+      if (!confirm(`确定要拒绝员工 ${employee.name} 的审核吗?`)) {
+        return;
+      }
+
+      try {
+        const response = await api.rejectEmployee(employee.id);
+        if (response.success) {
+          alert('员工审核已拒绝');
+          this.pendingEmployees = this.pendingEmployees.filter(e => e.id !== employee.id);
+          await this.loadPendingCount();
+        }
+      } catch (error) {
+        console.error('审核拒绝失败:', error);
+        alert('操作失败，请重试');
       }
     },
 
@@ -585,7 +718,7 @@ export default {
             idCardBack: idCardBackUrl
           });
           if (response.success) {
-            alert('员工创建成功');
+            alert('员工创建成功，请等待管理员审核通过后即可登录');
             this.closeModal();
             this.loadEmployees();
           }
@@ -1348,6 +1481,121 @@ td {
   border-color: #388e3c;
 }
 
+.btn-warning {
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  color: white;
+}
+
+.btn-warning:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+}
+
+.btn-success {
+  background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.btn-danger {
+  background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+}
+
+.btn-sm {
+  padding: 6px 16px;
+  font-size: 13px;
+}
+
+.approval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.approval-item {
+  border: 2px solid #e0e0e0;
+  border-radius: 12px;
+  padding: 20px;
+  background: #fafafa;
+  transition: all 0.3s;
+}
+
+.approval-item:hover {
+  border-color: #667eea;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+}
+
+.approval-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 15px;
+}
+
+.approval-details {
+  flex: 1;
+}
+
+.approval-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.approval-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #666;
+  font-size: 14px;
+}
+
+.approval-idcard {
+  margin-bottom: 15px;
+  padding: 15px;
+  background: white;
+  border-radius: 8px;
+}
+
+.idcard-images {
+  display: flex;
+  gap: 15px;
+}
+
+.idcard-image {
+  max-width: 200px;
+  max-height: 150px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+  object-fit: cover;
+  cursor: pointer;
+  transition: transform 0.3s;
+}
+
+.idcard-image:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.approval-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;
@@ -1399,6 +1647,27 @@ td {
   .group-toggle {
     width: 100%;
     justify-content: center;
+  }
+
+  .approval-info {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .idcard-images {
+    flex-direction: column;
+  }
+
+  .idcard-image {
+    max-width: 100%;
+  }
+
+  .approval-actions {
+    flex-direction: column;
+  }
+
+  .approval-actions button {
+    width: 100%;
   }
 }
 </style>
